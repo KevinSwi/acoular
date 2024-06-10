@@ -18,7 +18,8 @@
     UncorrelatedNoiseSource
     SourceMixer
     PointSourceConvolve
-    WavTimeSamples
+    WavSamples
+    CsvSamples
 """
 
 # imports from other packages
@@ -52,6 +53,7 @@ from numpy import (
 from numpy import min as npmin
 from numpy.fft import fft, ifft
 from numpy.linalg import norm
+import pandas as pd
 from scipy.special import sph_harm, spherical_jn, spherical_yn
 from scipy.io import wavfile
 from traits.api import (
@@ -76,8 +78,6 @@ from traits.api import (
     observe,
     on_trait_change,
 )
-
-import pandas as pd
 
 # acoular imports
 from .calib import Calib
@@ -549,7 +549,7 @@ class CsvSamples(SamplesGenerator):
         # file = _get_h5file_class()
         # self.h5f = file(self.name)
         self.load_timedata()
-        # self.load_metadata()
+        self.load_metadata()
 
     def load_timedata(self):
         """Loads timedata from .csv file. Only for internal use."""
@@ -560,7 +560,7 @@ class CsvSamples(SamplesGenerator):
         """Loads metadata from .csv file. Only for internal use.
         No usage at the moment.
         """
-        # self.metadata = {}
+        self.metadata = {}
 
     def result(self, num=128):
         """Python generator that yields the output block-wise.
