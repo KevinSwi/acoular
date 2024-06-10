@@ -77,6 +77,8 @@ from traits.api import (
     on_trait_change,
 )
 
+import pandas as pd
+
 # acoular imports
 from .calib import Calib
 from .environments import Environment
@@ -412,6 +414,153 @@ class WavSamples(SamplesGenerator):
         No usage at the moment.
         """
         self.metadata = {}
+
+    def result(self, num=128):
+        """Python generator that yields the output block-wise.
+
+        Parameters
+        ----------
+        num : integer, defaults to 128
+            This parameter defines the size of the blocks to be yielded
+            (i.e. the number of samples per block) .
+
+        Returns
+        -------
+        Samples in blocks of shape (num, numchannels).
+            The last block may be shorter than num.
+
+        """
+        if self.numsamples == 0:
+            msg = 'no samples available'
+            raise OSError(msg)
+        self._datachecksum  # trigger checksum calculation # noqa: B018
+        i = 0
+        if self.calib:
+            if self.calib.num_mics == self.numchannels:
+                cal_factor = self.calib.data[newaxis]
+            else:
+                raise ValueError('calibration data not compatible: %i, %i' % (self.calib.num_mics, self.numchannels))
+            while i < self.numsamples:
+                yield self.data[i : i + num] * cal_factor
+                i += num
+        else:
+            while i < self.numsamples:
+                yield self.data[i : i + num]
+                i += num
+
+
+class CsvSamples(SamplesGenerator):
+    """Container for time data in `*.csv` format.
+
+    This class loads measured data from wave files and
+    provides information about this data.
+    It also serves as an interface where the data can be accessed
+    (e.g. for use in a block chain) via the :meth:`result` generator.
+
+    Attributes
+    ----------
+    name : str
+        Full name of the .csv file with data.
+    basename : str
+        Basename of the .csv file with data, is set automatically.
+    calib : Calib, optional
+        Calibration data, instance of :class:`~acoular.calib.Calib` class.
+    numchannels : int
+        Number of channels, is set automatically / read from file.
+    numsamples : int
+        Number of time data samples, is set automatically / read from file.
+    sample_freq : int
+        Sample frequency of the signal, is set automatically / read from file.
+    data : ndarray
+        The time data as array of floats with dimension (numsamples, numchannels).
+    metadata : dict
+        Provides metadata stored in CSV file object.
+
+    Methods
+    -------
+    load_data()
+        Open the .csv file and set attributes.
+    load_timedata()
+        Loads timedata from .csv file. Only for internal use.
+    load_metadata()
+        Loads metadata from .csv file. Only for internal use.
+    result(num=128)
+        Python generator that yields the output block-wise.
+
+    """
+
+    #: Full name of the .csv file with data.
+    name = File(filter=['*.csv'], desc='name of data file')
+
+    #: Basename of the .csv file with data, is set automatically.
+    basename = Property(
+        depends_on='name',  # filter=['*.csv'],
+        desc='basename of data file',
+    )
+
+    #: Calibration data, instance of :class:`~acoular.calib.Calib` class, optional .
+    calib = Trait(Calib, desc='Calibration data')
+
+    #: Number of channels, is set automatically / read from file.
+    numchannels = CLong(0, desc='number of input channels')
+
+    #: Number of time data samples, is set automatically / read from file.
+    numsamples = CLong(0, desc='number of samples')
+
+    #: Sample frequency of the signal, is set automatically / read from file.
+    sample_freq = CLong(0, desc='sample frequency of the signal')
+
+    #: The time data as array of floats with dimension (numsamples, numchannels).
+    data = Any(transient=True, desc='the actual time data array')
+
+    #: HDF5 file object
+    # h5f = Instance(H5FileBase, transient=True) # anzupassen
+
+    #: Provides metadata stored in HDF5 file object
+    metadata = Dict(desc='metadata contained in .csv file')
+
+    # Checksum over first data entries of all channels
+    _datachecksum = Property()
+
+    # internal identifier
+    digest = Property(depends_on=['basename', 'calib.digest', '_datachecksum'])
+
+    def _get__datachecksum(self):
+        return self.data[1, :].sum()
+
+    @cached_property
+    def _get_digest(self):
+        return digest(self)
+
+    @cached_property
+    def _get_basename(self):
+        return path.splitext(path.basename(self.name))[0]
+
+    @on_trait_change('basename')
+    def load_data(self):
+        """Open the .csv file and set attributes."""
+        if not path.isfile(self.name):
+            # no file there
+            self.numsamples = 0
+            self.numchannels = 0
+            self.sample_freq = 0
+            raise OSError('No such file: %s' % self.name)
+        
+        # file = _get_h5file_class()
+        # self.h5f = file(self.name)
+        self.load_timedata()
+        # self.load_metadata()
+
+    def load_timedata(self):
+        """Loads timedata from .csv file. Only for internal use."""
+        self.sample_freq,self.data = pd.read_csv(self.name)
+        (self.numsamples, self.numchannels) = self.data.shape
+
+    def load_metadata(self):
+        """Loads metadata from .csv file. Only for internal use.
+        No usage at the moment.
+        """
+        # self.metadata = {}
 
     def result(self, num=128):
         """Python generator that yields the output block-wise.
